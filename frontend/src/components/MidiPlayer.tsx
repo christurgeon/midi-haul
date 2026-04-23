@@ -1,4 +1,5 @@
 import "html-midi-player";
+import { useRef, useEffect } from "react";
 import { api } from "../api/client";
 import type { MidiFile } from "../api/client";
 import { X } from "lucide-react";
@@ -9,11 +10,17 @@ interface Props {
 }
 
 export function MidiPlayer({ file, onClose }: Props) {
-  if (!file) return null;
+  const playerRef = useRef<HTMLElement>(null);
 
-  function handlePlay() {
-    api.incrementPlay(file!.id);
-  }
+  useEffect(() => {
+    const el = playerRef.current;
+    if (!el || !file) return;
+    const handler = () => api.incrementPlay(file.id);
+    el.addEventListener("play", handler);
+    return () => el.removeEventListener("play", handler);
+  }, [file]);
+
+  if (!file) return null;
 
   return (
     <div className="fixed bottom-0 left-0 right-0 bg-white border-t shadow-lg px-4 py-3 z-50">
@@ -26,9 +33,9 @@ export function MidiPlayer({ file, onClose }: Props) {
           <button onClick={onClose} className="text-gray-400 hover:text-gray-600"><X className="h-5 w-5" /></button>
         </div>
         <midi-player
+          ref={playerRef as any}
           src={`/api/midi/${file.id}/stream`}
           sound-font
-          onPlay={handlePlay}
           style={{ width: "100%" }}
         />
       </div>

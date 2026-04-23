@@ -8,6 +8,7 @@ declare namespace React {
           src?: string;
           "sound-font"?: string | boolean;
           loop?: boolean;
+          ref?: React.Ref<HTMLElement>;
         },
         HTMLElement
       >;
@@ -15,6 +16,7 @@ declare namespace React {
         React.HTMLAttributes<HTMLElement> & {
           src?: string;
           type?: "piano-roll" | "staff";
+          ref?: React.Ref<HTMLElement>;
         },
         HTMLElement
       >;

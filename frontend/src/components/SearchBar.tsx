@@ -14,7 +14,7 @@ export function SearchBar({ onSearch, sources }: Props) {
   useEffect(() => {
     const t = setTimeout(() => onSearch(search, source, genre), 300);
     return () => clearTimeout(t);
-  }, [search, source, genre]);
+  }, [search, source, genre, onSearch]);
 
   return (
     <div className="flex gap-2 items-center flex-wrap">

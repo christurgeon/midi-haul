@@ -51,7 +51,27 @@ export interface ScrapeSource {
   enabled: boolean;
 }
 
+export interface MidiStats {
+  total: number;
+  total_size_mb: number;
+  by_source?: Record<string, number>;
+  [key: string]: unknown;
+}
+
+export interface JobStatus {
+  status: string;
+  files_added?: number;
+  errors?: number;
+  [key: string]: unknown;
+}
+
 const BASE = "/api";
+
+async function fetchJSON<T>(input: RequestInfo | URL, init?: RequestInit): Promise<T> {
+  const res = await fetch(input as RequestInfo, init);
+  if (!res.ok) throw new Error(`HTTP ${res.status}: ${res.statusText}`);
+  return res.json();
+}
 
 export const api = {
   getMidiFiles: async (params: Record<string, string | number | undefined>): Promise<MidiFileList> => {
@@ -59,13 +79,11 @@ export const api = {
     for (const [k, v] of Object.entries(params)) {
       if (v !== undefined && v !== "") q.set(k, String(v));
     }
-    const res = await fetch(`${BASE}/midi?${q}`);
-    return res.json();
+    return fetchJSON<MidiFileList>(`${BASE}/midi?${q}`);
   },
 
-  getMidiStats: async () => {
-    const res = await fetch(`${BASE}/midi/stats`);
-    return res.json();
+  getMidiStats: async (): Promise<MidiStats> => {
+    return fetchJSON<MidiStats>(`${BASE}/midi/stats`);
   },
 
   incrementPlay: async (id: number) => {
@@ -73,27 +91,22 @@ export const api = {
   },
 
   getSources: async (): Promise<ScrapeSource[]> => {
-    const res = await fetch(`${BASE}/scrape/sources`);
-    return res.json();
+    return fetchJSON<ScrapeSource[]>(`${BASE}/scrape/sources`);
   },
 
   runScraper: async (source: string, maxFiles: number): Promise<{ job_id: string }> => {
-    const res = await fetch(`${BASE}/scrape/run?source=${source}&max_files=${maxFiles}`, { method: "POST" });
-    return res.json();
+    return fetchJSON<{ job_id: string }>(`${BASE}/scrape/run?source=${source}&max_files=${maxFiles}`, { method: "POST" });
   },
 
-  getJobStatus: async (jobId: string) => {
-    const res = await fetch(`${BASE}/scrape/status/${jobId}`);
-    return res.json();
+  getJobStatus: async (jobId: string): Promise<JobStatus> => {
+    return fetchJSON<JobStatus>(`${BASE}/scrape/status/${jobId}`);
   },
 
   triggerAgent: async (): Promise<{ run_id: number }> => {
-    const res = await fetch(`${BASE}/agent/run`, { method: "POST" });
-    return res.json();
+    return fetchJSON<{ run_id: number }>(`${BASE}/agent/run`, { method: "POST" });
   },
 
   getAgentRuns: async (): Promise<AgentRun[]> => {
-    const res = await fetch(`${BASE}/agent/runs`);
-    return res.json();
+    return fetchJSON<AgentRun[]>(`${BASE}/agent/runs`);
   },
 };

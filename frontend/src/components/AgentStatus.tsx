@@ -21,32 +21,38 @@ export function AgentStatus() {
     setSteps([]);
     setStatus("running");
     setRunning(true);
-    const { run_id } = await api.triggerAgent();
-    setRunId(run_id);
+    try {
+      const { run_id } = await api.triggerAgent();
+      setRunId(run_id);
 
-    const es = new EventSource(`/api/agent/runs/${run_id}/stream`);
-    esRef.current = es;
+      const es = new EventSource(`/api/agent/runs/${run_id}/stream`);
+      esRef.current = es;
 
-    es.onmessage = (e) => {
-      const data = JSON.parse(e.data);
-      if (data.done) {
-        setStatus(data.status);
-        setRunning(false);
-        es.close();
-      } else if (data.error) {
+      es.onmessage = (e) => {
+        const data = JSON.parse(e.data);
+        if (data.done) {
+          setStatus(data.status);
+          setRunning(false);
+          es.close();
+        } else if (data.error) {
+          setStatus("failed");
+          setRunning(false);
+          es.close();
+        } else {
+          setSteps((prev) => [...prev, data as LiveStep]);
+        }
+      };
+
+      es.onerror = () => {
         setStatus("failed");
         setRunning(false);
         es.close();
-      } else {
-        setSteps((prev) => [...prev, data as LiveStep]);
-      }
-    };
-
-    es.onerror = () => {
+      };
+    } catch (e) {
+      console.error("Failed to start agent run:", e);
       setStatus("failed");
       setRunning(false);
-      es.close();
-    };
+    }
   }
 
   useEffect(() => () => esRef.current?.close(), []);

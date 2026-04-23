@@ -20,12 +20,22 @@ export function ScrapeControl() {
     },
   });
 
+  const [submitting, setSubmitting] = useState(false);
+
   async function startScrape() {
-    const { job_id } = await api.runScraper(source, maxFiles);
-    setJobId(job_id);
+    if (submitting) return;
+    setSubmitting(true);
+    try {
+      const { job_id } = await api.runScraper(source, maxFiles);
+      setJobId(job_id);
+    } catch (e) {
+      console.error(e);
+    } finally {
+      setSubmitting(false);
+    }
   }
 
-  const running = jobStatus?.status === "running";
+  const running = jobStatus?.status === "running" || submitting;
 
   return (
     <div className="border rounded p-4 flex flex-col gap-3">

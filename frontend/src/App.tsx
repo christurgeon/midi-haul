@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useCallback } from "react";
 import { QueryClient, QueryClientProvider, useQuery } from "@tanstack/react-query";
 import { Music } from "lucide-react";
 import { api } from "./api/client";
@@ -29,19 +29,20 @@ function AppInner() {
   });
 
   const { data: stats } = useQuery({ queryKey: ["stats"], queryFn: api.getMidiStats });
+  const { data: sourcesData } = useQuery({ queryKey: ["sources"], queryFn: api.getSources });
 
-  function handleSearch(s: string, src: string, g: string) {
+  const handleSearch = useCallback((s: string, src: string, g: string) => {
     setSearch(s);
     setSource(src);
     setGenre(g);
     setPage(1);
-  }
+  }, []);
 
   function handlePlay(file: MidiFile) {
     setActiveFile(file);
   }
 
-  const sources = stats?.by_source ? Object.keys(stats.by_source) : [];
+  const sources = (sourcesData || []).map((s) => s.name);
 
   return (
     <div className="min-h-screen bg-gray-50 flex flex-col" style={{ paddingBottom: activeFile ? "140px" : "0" }}>
