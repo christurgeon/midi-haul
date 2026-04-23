@@ -16,7 +16,6 @@ def extract_metadata(data: bytes) -> MidiMeta:
     mid = mido.MidiFile(file=io.BytesIO(data))
 
     title = composer = bpm = time_sig = None
-    tempo = 500_000  # default 120 BPM
 
     for track in mid.tracks:
         for msg in track:
@@ -27,8 +26,7 @@ def extract_metadata(data: bytes) -> MidiMeta:
                 v = msg.text.strip()
                 title = v if v else None
             elif msg.type == "set_tempo" and bpm is None:
-                tempo = msg.tempo
-                bpm = round(60_000_000 / tempo, 1)
+                bpm = round(60_000_000 / msg.tempo, 1)
             elif msg.type == "time_signature" and time_sig is None:
                 time_sig = f"{msg.numerator}/{msg.denominator}"
             elif msg.type == "copyright" and composer is None:
