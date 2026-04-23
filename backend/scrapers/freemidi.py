@@ -1,15 +1,18 @@
 import asyncio
-from typing import AsyncIterator
+import logging
+from collections.abc import AsyncGenerator
 from urllib.parse import urljoin
 from bs4 import BeautifulSoup
 from backend.scrapers.base import BaseScraper, ScrapedFile
+
+logger = logging.getLogger(__name__)
 
 
 class FreeMidiScraper(BaseScraper):
     name = "freemidi"
     BASE = "https://freemidi.org"
 
-    async def iter_files(self) -> AsyncIterator[ScrapedFile]:
+    async def iter_files(self) -> AsyncGenerator[ScrapedFile, None]:
         page = 1
         while True:
             url = f"{self.BASE}/topmidi" if page == 1 else f"{self.BASE}/topmidi?page={page}"
@@ -17,7 +20,8 @@ class FreeMidiScraper(BaseScraper):
                 resp = await self.client.get(url, timeout=15)
                 resp.raise_for_status()
                 soup = BeautifulSoup(resp.text, "lxml")
-            except Exception:
+            except Exception as e:
+                logger.warning("FreeMIDI page %d failed: %s", page, e)
                 break
 
             midi_links = [

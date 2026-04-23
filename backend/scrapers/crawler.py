@@ -1,24 +1,29 @@
 import asyncio
-from typing import AsyncIterator
+import logging
+import httpx
+from collections import deque
+from collections.abc import AsyncGenerator
 from urllib.parse import urljoin, urlparse
 from bs4 import BeautifulSoup
 from backend.scrapers.base import BaseScraper, ScrapedFile
+
+logger = logging.getLogger(__name__)
 
 
 class GeneralCrawler(BaseScraper):
     name = "crawler"
 
-    def __init__(self, client, rate_limit_delay: float = 1.5, seed_urls: list[str] | None = None, max_depth: int = 3):
+    def __init__(self, client: httpx.AsyncClient, rate_limit_delay: float = 1.5, seed_urls: list[str] | None = None, max_depth: int = 3):
         super().__init__(client, rate_limit_delay)
         self.seed_urls = seed_urls or []
         self.max_depth = max_depth
 
-    async def iter_files(self) -> AsyncIterator[ScrapedFile]:
+    async def iter_files(self) -> AsyncGenerator[ScrapedFile, None]:
         visited: set[str] = set()
-        queue: list[tuple[str, int]] = [(url, 0) for url in self.seed_urls]
+        queue: deque[tuple[str, int]] = deque((url, 0) for url in self.seed_urls)
 
         while queue:
-            url, depth = queue.pop(0)
+            url, depth = queue.popleft()
             if url in visited:
                 continue
             visited.add(url)
@@ -46,7 +51,8 @@ class GeneralCrawler(BaseScraper):
             if "text/html" not in resp.headers.get("content-type", ""):
                 return [], []
             soup = BeautifulSoup(resp.text, "lxml")
-        except Exception:
+        except Exception as e:
+            logger.warning("Crawler fetch %s failed: %s", url, e)
             return [], []
 
         base_domain = urlparse(url).netloc

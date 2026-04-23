@@ -1,28 +1,33 @@
 import asyncio
-from typing import AsyncIterator
+import logging
+from collections.abc import AsyncGenerator
 from urllib.parse import urljoin
-import httpx
 from bs4 import BeautifulSoup
 from backend.scrapers.base import BaseScraper, ScrapedFile
+
+logger = logging.getLogger(__name__)
 
 
 class VGMusicScraper(BaseScraper):
     name = "vgmusic"
     INDEX_URL = "https://www.vgmusic.com/music/"
 
-    async def iter_files(self) -> AsyncIterator[ScrapedFile]:
+    async def iter_files(self) -> AsyncGenerator[ScrapedFile, None]:
         try:
             resp = await self.client.get(self.INDEX_URL, timeout=15)
             resp.raise_for_status()
             soup = BeautifulSoup(resp.text, "lxml")
-        except Exception:
+        except Exception as e:
+            logger.warning("VGMusic index fetch failed: %s", e)
             return
 
         # Find links to system/console sub-pages
         section_links = [
             urljoin(self.INDEX_URL, a["href"])
             for a in soup.find_all("a", href=True)
-            if a["href"].endswith("/") and "music/" in a["href"]
+            if a["href"].endswith("/")
+            and "music/" in a["href"]
+            and urljoin(self.INDEX_URL, a["href"]) != self.INDEX_URL
         ]
 
         for section_url in section_links:
@@ -30,12 +35,13 @@ class VGMusicScraper(BaseScraper):
                 yield sf
             await asyncio.sleep(self.rate_limit_delay)
 
-    async def _scrape_section(self, section_url: str) -> AsyncIterator[ScrapedFile]:
+    async def _scrape_section(self, section_url: str) -> AsyncGenerator[ScrapedFile, None]:
         try:
             resp = await self.client.get(section_url, timeout=15)
             resp.raise_for_status()
             soup = BeautifulSoup(resp.text, "lxml")
-        except Exception:
+        except Exception as e:
+            logger.warning("VGMusic section %s failed: %s", section_url, e)
             return
 
         for a in soup.find_all("a", href=True):

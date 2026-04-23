@@ -1,14 +1,16 @@
 import asyncio
-from typing import AsyncIterator
-import httpx
+import logging
+from collections.abc import AsyncGenerator
 from backend.scrapers.base import BaseScraper, ScrapedFile
+
+logger = logging.getLogger(__name__)
 
 
 class BitMidiScraper(BaseScraper):
     name = "bitmidi"
     BASE = "https://bitmidi.com"
 
-    async def iter_files(self) -> AsyncIterator[ScrapedFile]:
+    async def iter_files(self) -> AsyncGenerator[ScrapedFile, None]:
         page = 1
         while True:
             try:
@@ -19,7 +21,8 @@ class BitMidiScraper(BaseScraper):
                 )
                 resp.raise_for_status()
                 data = resp.json()
-            except Exception:
+            except Exception as e:
+                logger.warning("BitMidi page %d failed: %s", page, e)
                 break
 
             items = data.get("data") or data.get("items") or []
@@ -29,8 +32,13 @@ class BitMidiScraper(BaseScraper):
             for item in items:
                 slug = item.get("slug") or item.get("id")
                 filename = item.get("filename") or f"{slug}.mid"
+                download_url = (
+                    item.get("download_url")
+                    or item.get("url")
+                    or f"{self.BASE}/uploads/{slug}.mid"
+                )
                 yield ScrapedFile(
-                    source_url=f"{self.BASE}/uploads/{slug}.mid",
+                    source_url=download_url,
                     page_url=f"{self.BASE}/{slug}",
                     raw_filename=filename,
                     source_name=self.name,
