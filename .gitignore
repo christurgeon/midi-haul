@@ -1,0 +1,11 @@
+__pycache__/
+*.py[cod]
+.venv/
+*.egg-info/
+dist/
+.env
+data/midi_files/
+data/midi_haul.db
+node_modules/
+frontend/dist/
+.DS_Store
