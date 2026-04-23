@@ -13,6 +13,7 @@ class Settings(BaseSettings):
     crawler_max_depth: int = 3
     log_level: str = "INFO"
     brave_search_api_key: str | None = None
+    agent_model: str = "claude-sonnet-4-5"
 
 
 settings = Settings()

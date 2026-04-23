@@ -32,7 +32,7 @@ async def run_agent(run_id: int, db: Session) -> None:
     try:
         while tool_call_count < settings.agent_max_steps:
             response = await client.messages.create(
-                model="claude-sonnet-4-5",
+                model=settings.agent_model,
                 max_tokens=4096,
                 system=SYSTEM_PROMPT,
                 tools=TOOLS,
@@ -43,8 +43,7 @@ async def run_agent(run_id: int, db: Session) -> None:
 
             if response.stop_reason == "end_turn":
                 break
-
-            if response.stop_reason == "tool_use":
+            elif response.stop_reason == "tool_use":
                 tool_results = []
                 for block in response.content:
                     if block.type == "tool_use":
@@ -59,6 +58,9 @@ async def run_agent(run_id: int, db: Session) -> None:
                         _save_step(run_id, block.name, block.input, result, db)
 
                 messages.append({"role": "user", "content": tool_results})
+            else:
+                logger.warning("Agent run %d stopped unexpectedly: %s", run_id, response.stop_reason)
+                break
 
         _finish_run(run_id, "completed", db)
 
@@ -96,7 +98,7 @@ async def _dispatch_tool(name: str, inputs: dict, run_id: int, db: Session) -> d
     elif name == "run_crawler":
         return await _tool_run_crawler(inputs, run_id, db)
     elif name == "search_web_for_midi_sources":
-        return _tool_search_web(inputs)
+        return await _tool_search_web(inputs)
     elif name == "get_scrape_errors":
         return _tool_get_errors(inputs, db)
     elif name == "log_message":
@@ -144,13 +146,17 @@ async def _tool_run_scraper(inputs: dict, run_id: int, db: Session) -> dict:
     if source_name not in scraper_map:
         return {"error": f"Unknown scraper: {source_name}"}
 
+    source_record = db.query(ScrapeSource).filter_by(name=source_name).first()
+    if source_record and not source_record.enabled:
+        return {"error": f"Source '{source_name}' is disabled."}
+
     found = added = errors = 0
 
     async with httpx.AsyncClient(headers={"User-Agent": "midi-haul/0.1"}) as client:
         scraper = scraper_map[source_name](client, settings.scrape_rate_limit_delay)
         async for sf in scraper.iter_files():
             found += 1
-            if found > max_files:
+            if found >= max_files:
                 break
 
             # URL dedup check
@@ -220,7 +226,7 @@ async def _tool_run_crawler(inputs: dict, run_id: int, db: Session) -> dict:
         crawler = GeneralCrawler(client, settings.scrape_rate_limit_delay, seed_urls, max_depth)
         async for sf in crawler.iter_files():
             found += 1
-            if found > max_files:
+            if found >= max_files:
                 break
 
             existing = db.query(MidiFile).filter_by(source_url=sf.source_url).first()
@@ -267,7 +273,7 @@ async def _tool_run_crawler(inputs: dict, run_id: int, db: Session) -> dict:
     return {"found": found, "added": added, "errors": errors, "seeds": seed_urls}
 
 
-def _tool_search_web(inputs: dict) -> dict:
+async def _tool_search_web(inputs: dict) -> dict:
     """Search for MIDI source URLs. Uses Brave API if configured, otherwise returns guidance."""
     import httpx
     query = inputs["query"]
@@ -279,12 +285,13 @@ def _tool_search_web(inputs: dict) -> dict:
         }
 
     try:
-        resp = httpx.get(
-            "https://api.search.brave.com/res/v1/web/search",
-            params={"q": query, "count": 10},
-            headers={"Accept": "application/json", "X-Subscription-Token": settings.brave_search_api_key},
-            timeout=10,
-        )
+        async with httpx.AsyncClient() as client:
+            resp = await client.get(
+                "https://api.search.brave.com/res/v1/web/search",
+                params={"q": query, "count": 10},
+                headers={"Accept": "application/json", "X-Subscription-Token": settings.brave_search_api_key},
+                timeout=10,
+            )
         resp.raise_for_status()
         results = resp.json().get("web", {}).get("results", [])
         return {"urls": [r["url"] for r in results], "query": query}
