@@ -3,9 +3,16 @@ __pycache__/
 .venv/
 *.egg-info/
 dist/
+build/
 .env
+.env.*
+!.env.example
 data/midi_files/
 data/midi_haul.db
 node_modules/
 frontend/dist/
 .DS_Store
+.coverage
+htmlcov/
+.pytest_cache/
+*.log
