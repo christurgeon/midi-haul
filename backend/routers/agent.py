@@ -1,27 +1,27 @@
 import asyncio
 import json
 from datetime import datetime, UTC
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException
 from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session
 
 from backend.database import get_db, SessionLocal
 from backend.models import AgentRun, AgentRunStep
 from backend.schemas import AgentRunSchema
+from backend.agent.orchestrator import run_agent
 
 router = APIRouter(tags=["agent"])
 
 
 @router.post("/run")
-def trigger_agent_run(db: Session = Depends(get_db)):
+async def trigger_agent_run(
+    background_tasks: BackgroundTasks,
+    db: Session = Depends(get_db),
+):
     run = AgentRun(started_at=datetime.now(UTC), status="running")
     db.add(run)
     db.commit()
     db.refresh(run)
-
-    import asyncio
-    from fastapi import BackgroundTasks
-    from backend.agent.orchestrator import run_agent
 
     async def _run():
         db2 = SessionLocal()
@@ -30,7 +30,7 @@ def trigger_agent_run(db: Session = Depends(get_db)):
         finally:
             db2.close()
 
-    asyncio.ensure_future(_run())
+    background_tasks.add_task(_run)
     return {"run_id": run.id}
 
 
@@ -53,9 +53,9 @@ async def stream_run(run_id: int):
 
     async def event_generator():
         last_step_id = 0
-        while True:
-            db = SessionLocal()
-            try:
+        db = SessionLocal()
+        try:
+            while True:
                 run = db.get(AgentRun, run_id)
                 if not run:
                     yield f"data: {json.dumps({'error': 'run not found'})}\n\n"
@@ -83,9 +83,12 @@ async def stream_run(run_id: int):
                     yield f"data: {json.dumps({'done': True, 'status': run.status})}\n\n"
                     return
 
-            finally:
-                db.close()
+                await asyncio.sleep(0.5)
+        finally:
+            db.close()
 
-            await asyncio.sleep(0.5)
-
-    return StreamingResponse(event_generator(), media_type="text/event-stream")
+    return StreamingResponse(
+        event_generator(),
+        media_type="text/event-stream",
+        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+    )

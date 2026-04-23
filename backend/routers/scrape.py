@@ -21,10 +21,10 @@ def list_sources(db: Session = Depends(get_db)):
 
 
 @router.post("/run")
-def run_scraper(
+async def run_scraper(
     source: str,
+    background_tasks: BackgroundTasks,
     max_files: int = 200,
-    background_tasks: BackgroundTasks = BackgroundTasks(),
     db: Session = Depends(get_db),
 ):
     job_id = str(uuid.uuid4())
