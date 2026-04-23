@@ -1,5 +1,6 @@
 import { X, ExternalLink } from "lucide-react";
 import type { MidiFile } from "../api/client";
+import { formatDuration } from "../utils/format";
 
 interface Props {
   file: MidiFile | null;
@@ -32,7 +33,7 @@ export function MetadataPanel({ file, onClose, onPlay }: Props) {
         <Row label="Title" value={file.title} />
         <Row label="Composer" value={file.composer} />
         <Row label="BPM" value={file.bpm?.toFixed(0)} />
-        <Row label="Duration" value={file.duration_sec ? `${Math.floor(file.duration_sec / 60)}:${String(Math.floor(file.duration_sec % 60)).padStart(2, "0")}` : null} />
+        <Row label="Duration" value={formatDuration(file.duration_sec)} />
         <Row label="Time sig." value={file.time_signature} />
         <Row label="Tracks" value={file.track_count} />
         <Row label="Source" value={file.source_name} />

@@ -1,4 +1,3 @@
-import asyncio
 import uuid
 from datetime import datetime, UTC
 from typing import Any
@@ -56,10 +55,7 @@ def list_errors(
 async def _run_scraper_job(job_id: str, source_name: str, max_files: int) -> None:
     import httpx
     from backend.scrapers import BitMidiScraper, VGMusicScraper, FreeMidiScraper, KunstderfugeScraper
-    from backend.lib.dedup import sha256_of
-    from backend.lib.storage import file_path_for, ensure_parent
-    from backend.lib.metadata import extract_metadata
-    from backend.models import MidiFile, ScrapeError
+    from backend.lib.ingest import ingest_file, record_scrape_error
     from backend.config import settings
 
     scraper_map = {
@@ -85,46 +81,13 @@ async def _run_scraper_job(job_id: str, source_name: str, max_files: int) -> Non
                 if found >= max_files:
                     break
 
-                existing = db.query(MidiFile).filter_by(source_url=sf.source_url).first()
-                if existing:
-                    continue
-
-                try:
-                    data = await scraper.download(sf)
-                except Exception as e:
+                ok, err = await ingest_file(sf, scraper, source_name, db, settings.midi_storage_dir)
+                if err:
                     errors += 1
-                    db.add(ScrapeError(source_name=source_name, url=sf.source_url, error_msg=str(e), occurred_at=datetime.now(UTC)))
-                    db.commit()
-                    continue
+                    record_scrape_error(source_name, sf.source_url, err, db)
+                elif ok:
+                    added += 1
 
-                file_hash = sha256_of(data)
-                if db.query(MidiFile).filter_by(file_hash=file_hash).first():
-                    continue
-
-                meta = extract_metadata(data)
-                path = file_path_for(source_name, file_hash, settings.midi_storage_dir)
-                ensure_parent(path)
-                path.write_bytes(data)
-
-                db.add(MidiFile(
-                    file_hash=file_hash,
-                    filename=sf.raw_filename,
-                    source_url=sf.source_url,
-                    page_url=sf.page_url,
-                    source_name=source_name,
-                    title=meta.title or sf.extra.get("title"),
-                    composer=meta.composer or sf.extra.get("composer"),
-                    genre=sf.extra.get("genre"),
-                    bpm=meta.bpm,
-                    duration_sec=meta.duration_sec,
-                    track_count=meta.track_count,
-                    time_signature=meta.time_signature,
-                    scraped_at=datetime.now(UTC),
-                    file_path=str(path.relative_to(settings.midi_storage_dir)),
-                    file_size=len(data),
-                ))
-                db.commit()
-                added += 1
                 _jobs[job_id].update({"files_found": found, "files_added": added, "errors": errors})
 
         _jobs[job_id] = {"status": "completed", "files_found": found, "files_added": added, "errors": errors}

@@ -1,5 +1,6 @@
 import { Play } from "lucide-react";
 import type { MidiFile } from "../api/client";
+import { formatDuration } from "../utils/format";
 
 interface Props {
   files: MidiFile[];
@@ -23,13 +24,6 @@ const cols: { key: string; label: string }[] = [
   { key: "scraped_at", label: "Added" },
   { key: "play_count", label: "Plays" },
 ];
-
-function fmt(sec: number | null) {
-  if (!sec) return "—";
-  const m = Math.floor(sec / 60);
-  const s = Math.floor(sec % 60);
-  return `${m}:${s.toString().padStart(2, "0")}`;
-}
 
 export function MidiTable({ files, total, page, limit, onPageChange, onPlay, onSelect, activeId, sort, onSort }: Props) {
   const [sortCol, sortDir] = sort.split(":");
@@ -79,7 +73,7 @@ export function MidiTable({ files, total, page, limit, onPageChange, onPlay, onS
                 <td className="px-3 py-1.5 font-medium">{f.title || f.filename}</td>
                 <td className="px-3 py-1.5 text-gray-500">{f.composer || "—"}</td>
                 <td className="px-3 py-1.5 text-gray-500">{f.bpm ? f.bpm.toFixed(0) : "—"}</td>
-                <td className="px-3 py-1.5 text-gray-500">{fmt(f.duration_sec)}</td>
+                <td className="px-3 py-1.5 text-gray-500">{formatDuration(f.duration_sec)}</td>
                 <td className="px-3 py-1.5">
                   <span className="px-1.5 py-0.5 rounded bg-gray-100 text-xs">{f.source_name}</span>
                 </td>

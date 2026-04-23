@@ -7,6 +7,7 @@ import anthropic
 from backend.config import settings
 from backend.models import AgentRun, AgentRunStep, ScrapeSource, ScrapeError, MidiFile
 from backend.agent.tools import TOOLS
+from backend.lib.ingest import ingest_file, record_scrape_error
 
 logger = logging.getLogger(__name__)
 
@@ -21,6 +22,21 @@ Each run you should:
 
 Stop when you have run all stale sources or when you have made enough progress for one session.
 Be efficient — do not run the same scraper twice in one session."""
+
+SCRAPER_MAP = None  # populated lazily to avoid circular imports at module load
+
+
+def _get_scraper_map():
+    global SCRAPER_MAP
+    if SCRAPER_MAP is None:
+        from backend.scrapers import BitMidiScraper, VGMusicScraper, FreeMidiScraper, KunstderfugeScraper
+        SCRAPER_MAP = {
+            "bitmidi": BitMidiScraper,
+            "vgmusic": VGMusicScraper,
+            "freemidi": FreeMidiScraper,
+            "kunstderfuge": KunstderfugeScraper,
+        }
+    return SCRAPER_MAP
 
 
 async def run_agent(run_id: int, db: Session) -> None:
@@ -108,7 +124,6 @@ async def _dispatch_tool(name: str, inputs: dict, run_id: int, db: Session) -> d
 
 
 def _tool_list_sources(db: Session) -> dict:
-    from datetime import timedelta
     sources = db.query(ScrapeSource).all()
     now = datetime.now(UTC)
     result = []
@@ -129,20 +144,11 @@ def _tool_list_sources(db: Session) -> dict:
 
 async def _tool_run_scraper(inputs: dict, run_id: int, db: Session) -> dict:
     import httpx
-    from backend.scrapers import BitMidiScraper, VGMusicScraper, FreeMidiScraper, KunstderfugeScraper
-    from backend.lib.dedup import sha256_of
-    from backend.lib.storage import file_path_for, ensure_parent
-    from backend.lib.metadata import extract_metadata
 
     source_name = inputs["source"]
     max_files = inputs.get("max_files", 200)
 
-    scraper_map = {
-        "bitmidi": BitMidiScraper,
-        "vgmusic": VGMusicScraper,
-        "freemidi": FreeMidiScraper,
-        "kunstderfuge": KunstderfugeScraper,
-    }
+    scraper_map = _get_scraper_map()
     if source_name not in scraper_map:
         return {"error": f"Unknown scraper: {source_name}"}
 
@@ -159,49 +165,12 @@ async def _tool_run_scraper(inputs: dict, run_id: int, db: Session) -> dict:
             if found >= max_files:
                 break
 
-            # URL dedup check
-            existing = db.query(MidiFile).filter_by(source_url=sf.source_url).first()
-            if existing:
-                continue
-
-            try:
-                data = await scraper.download(sf)
-            except Exception as e:
+            ok, err = await ingest_file(sf, scraper, source_name, db, settings.midi_storage_dir)
+            if err:
                 errors += 1
-                _record_error(source_name, sf.source_url, str(e), db)
-                continue
-
-            file_hash = sha256_of(data)
-
-            # Hash dedup check
-            if db.query(MidiFile).filter_by(file_hash=file_hash).first():
-                continue
-
-            meta = extract_metadata(data)
-            path = file_path_for(source_name, file_hash, settings.midi_storage_dir)
-            ensure_parent(path)
-            path.write_bytes(data)
-
-            midi = MidiFile(
-                file_hash=file_hash,
-                filename=sf.raw_filename,
-                source_url=sf.source_url,
-                page_url=sf.page_url,
-                source_name=source_name,
-                title=meta.title or sf.extra.get("title"),
-                composer=meta.composer or sf.extra.get("composer"),
-                genre=sf.extra.get("genre"),
-                bpm=meta.bpm,
-                duration_sec=meta.duration_sec,
-                track_count=meta.track_count,
-                time_signature=meta.time_signature,
-                scraped_at=datetime.now(UTC),
-                file_path=str(path.relative_to(settings.midi_storage_dir)),
-                file_size=len(data),
-            )
-            db.add(midi)
-            db.commit()
-            added += 1
+                record_scrape_error(source_name, sf.source_url, err, db)
+            elif ok:
+                added += 1
 
     _update_source_stats(source_name, added, errors, db)
     _update_run_files_added(run_id, added, db)
@@ -212,9 +181,6 @@ async def _tool_run_scraper(inputs: dict, run_id: int, db: Session) -> dict:
 async def _tool_run_crawler(inputs: dict, run_id: int, db: Session) -> dict:
     import httpx
     from backend.scrapers.crawler import GeneralCrawler
-    from backend.lib.dedup import sha256_of
-    from backend.lib.storage import file_path_for, ensure_parent
-    from backend.lib.metadata import extract_metadata
 
     seed_urls = inputs["seed_urls"]
     max_depth = inputs.get("max_depth", 2)
@@ -229,52 +195,18 @@ async def _tool_run_crawler(inputs: dict, run_id: int, db: Session) -> dict:
             if found >= max_files:
                 break
 
-            existing = db.query(MidiFile).filter_by(source_url=sf.source_url).first()
-            if existing:
-                continue
-
-            try:
-                data = await crawler.download(sf)
-            except Exception as e:
+            ok, err = await ingest_file(sf, crawler, "crawler", db, settings.midi_storage_dir)
+            if err:
                 errors += 1
-                _record_error("crawler", sf.source_url, str(e), db)
-                continue
-
-            file_hash = sha256_of(data)
-            if db.query(MidiFile).filter_by(file_hash=file_hash).first():
-                continue
-
-            meta = extract_metadata(data)
-            path = file_path_for("crawler", file_hash, settings.midi_storage_dir)
-            ensure_parent(path)
-            path.write_bytes(data)
-
-            midi = MidiFile(
-                file_hash=file_hash,
-                filename=sf.raw_filename,
-                source_url=sf.source_url,
-                page_url=sf.page_url,
-                source_name="crawler",
-                title=meta.title,
-                composer=meta.composer,
-                bpm=meta.bpm,
-                duration_sec=meta.duration_sec,
-                track_count=meta.track_count,
-                time_signature=meta.time_signature,
-                scraped_at=datetime.now(UTC),
-                file_path=str(path.relative_to(settings.midi_storage_dir)),
-                file_size=len(data),
-            )
-            db.add(midi)
-            db.commit()
-            added += 1
+                record_scrape_error("crawler", sf.source_url, err, db)
+            elif ok:
+                added += 1
 
     _update_run_files_added(run_id, added, db)
     return {"found": found, "added": added, "errors": errors, "seeds": seed_urls}
 
 
 async def _tool_search_web(inputs: dict) -> dict:
-    """Search for MIDI source URLs. Uses Brave API if configured, otherwise returns guidance."""
     import httpx
     query = inputs["query"]
 
@@ -317,7 +249,6 @@ def _tool_get_errors(inputs: dict, db: Session) -> dict:
 def _tool_log(inputs: dict, run_id: int, db: Session) -> dict:
     message = inputs["message"]
     logger.info("Agent run %d: %s", run_id, message)
-    # Also save as a step so the UI can display it
     step = AgentRunStep(
         run_id=run_id,
         tool_name="log_message",
@@ -328,12 +259,6 @@ def _tool_log(inputs: dict, run_id: int, db: Session) -> dict:
     db.add(step)
     db.commit()
     return {"ok": True}
-
-
-def _record_error(source_name: str, url: str | None, error_msg: str, db: Session) -> None:
-    err = ScrapeError(source_name=source_name, url=url, error_msg=error_msg, occurred_at=datetime.now(UTC))
-    db.add(err)
-    db.commit()
 
 
 def _update_source_stats(source_name: str, files_added: int, errors: int, db: Session) -> None:

@@ -1,11 +1,10 @@
 import os
-from datetime import datetime
-from typing import Literal
 from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session
 from sqlalchemy import func, desc, asc
 
+from backend.config import settings
 from backend.database import get_db
 from backend.models import MidiFile
 from backend.schemas import MidiFileSchema, MidiFileList
@@ -85,14 +84,15 @@ def stream_midi(midi_id: int, db: Session = Depends(get_db)):
     if not midi:
         raise HTTPException(status_code=404, detail="Not found")
 
-    full_path = os.path.join(settings_midi_storage_dir(), midi.file_path)
-    if not os.path.isfile(full_path):
-        raise HTTPException(status_code=404, detail="File not on disk")
+    full_path = os.path.join(settings.midi_storage_dir, midi.file_path)
 
     def iter_file():
-        with open(full_path, "rb") as f:
-            while chunk := f.read(65536):
-                yield chunk
+        try:
+            with open(full_path, "rb") as f:
+                while chunk := f.read(65536):
+                    yield chunk
+        except FileNotFoundError:
+            return
 
     return StreamingResponse(
         iter_file(),
@@ -109,8 +109,3 @@ def increment_play(midi_id: int, db: Session = Depends(get_db)):
     midi.play_count += 1
     db.commit()
     return {"ok": True}
-
-
-def settings_midi_storage_dir() -> str:
-    from backend.config import settings
-    return settings.midi_storage_dir
