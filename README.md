@@ -11,17 +11,18 @@ An AI-powered MIDI file collector. Uses site-specific scrapers and a Claude-powe
 ## Setup
 
 ```bash
-# Backend
-python -m venv .venv && source .venv/bin/activate
-pip install -e ".[dev]"
-playwright install chromium
-cp .env.example .env  # add your ANTHROPIC_API_KEY
-python -c "from backend.database import init_db; init_db()"
-uvicorn backend.main:app --reload
+# Backend (uses uv — https://docs.astral.sh/uv/)
+uv sync                       # creates .venv and installs all deps from uv.lock
+uv run playwright install chromium
+cp .env.example .env          # add your ANTHROPIC_API_KEY
+uv run python -c "from backend.database import init_db; init_db()"
+uv run uvicorn backend.main:app --reload
 
 # Frontend (separate terminal)
 cd frontend && npm install && npm run dev
 ```
+
+Run tests with `uv run pytest`. No need to activate the venv — `uv run` handles it.
 
 Open http://localhost:5173
 
