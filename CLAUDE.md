@@ -53,3 +53,12 @@ The scraper registry is **duplicated in three places** — all must be updated, 
 ## Testing notes
 
 `pytest` runs in `asyncio_mode = auto` (no `@pytest.mark.asyncio` needed, though tests use it). The `db` fixture (`tests/conftest.py`) gives an in-memory SQLite session. HTTP is mocked with `respx`; the agent's Anthropic client is patched directly (see `test_agent.py`). There are no frontend tests.
+
+## Writing style
+
+Write all responses in ASD-STE100 Simplified Technical English (STE). This applies to chat responses, code comments, commit messages, and documentation.
+
+- Keep instructions to 20 words or fewer. Keep descriptive sentences to 25 words or fewer.
+- Use the active voice, simple verb tenses, and one meaning for each word.
+- Use the same term for the same concept.
+- Do not change code, commands, file paths, error messages, or quoted text to follow these rules.
